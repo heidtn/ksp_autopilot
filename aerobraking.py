@@ -30,7 +30,16 @@ TEMPERATURE_TABLE = np.array([
     [50, 175]
 ])
 
-OrbitState = namedtuple('OrbitState', ['position', 'velocity', 'r_prev'])
+#TODO eventually migrate to 3.7 so we can use dataclasses
+
+class OrbitState:
+    def __init__(self,
+                 position: np.array,
+                 velocity: np.array,
+                 r_prev: float):
+        self.position = position
+        self.velocity = velocity
+        self.r_prev = r_prev
 
 
 class AerobrakeCalculator:
@@ -59,28 +68,29 @@ class AerobrakeCalculator:
         # TODO: calculate the temperature for various altitudes/positions/etc.
         self.get_density = lambda p: p / (R * T_0)
 
-    def calculate_aero(self, position, velocity, plot=True):
+    def calculate_aero(self, position, velocity, dt=0.1, plot=True):
         position = np.array(position)
         velocity = np.array(velocity)
         position_list = []
         time_list = []
         velocity_list = []
-        density_list = []
-
-        r = np.linalg.norm(position)
-        r_prev = np.linalg.norm(position)
 
         run = True
         apoapsis = False
         periapsis = False
         num_orbits = 0
         iteration = 0
-        dt = 0.1
 
         print("position start: ", position)
 
+        orbital_state = self.get_default_orbit_state(position, velocity)
+
         while run:
-            r = np.linalg.norm(position)
+            orbital_state = self.step_orbit(orbital_state, dt)
+            r = np.linalg.norm(orbital_state.position)
+            r_prev = orbital_state.r_prev
+            position_list.append(list(orbital_state.position))
+            velocity_list.append(np.linalg.norm(orbital_state.velocity))
 
             if not apoapsis and not periapsis:
                 if r < r_prev:
@@ -104,36 +114,7 @@ class AerobrakeCalculator:
             if num_orbits > 4:
                 run = False
 
-            t = iteration * dt
-            g = self.mu / (r**2.0)
-            altitude = r - self.R
 
-            v = np.linalg.norm(velocity)
-            velocity_list.append(v)
-            inverse_normal_position = -position / np.linalg.norm(position)
-            inverse_normal_velocity = -velocity / np.linalg.norm(velocity)
-            gravity_vec = inverse_normal_position * g
-
-            # Pressure from the surface not the center
-            pressure = self.get_pressure(altitude)
-            density = pressure / (R * self.get_atmospheric_temperature(altitude))
-            density_list.append(density)
-
-            Fdrag = self.Cd * self.area * 0.5 * density * v**2.0
-
-            if altitude < self.H:
-                Fdragvec = inverse_normal_velocity * Fdrag
-            else:
-                Fdragvec = np.array([0, 0, 0])
-
-            acceleration = gravity_vec + Fdragvec / self.mass
-            velocity += acceleration * dt
-            position += velocity * dt
-
-            position_list.append(np.array(position))
-            time_list.append(t)
-
-            r_prev = r
             iteration += 1
 
 
@@ -144,15 +125,42 @@ class AerobrakeCalculator:
         ax.plot(position_array[:, 0], position_array[:, 1], position_array[:, 2])
 
         fig2 = plt.figure()
-        plt.plot(density_list)
-
-        fig3 = plt.figure()
         plt.plot(velocity_list)
 
         plt.show()
 
-    def step_orbit(self, current_state):
-        
+    def get_default_orbit_state(self, position, velocity):
+        return OrbitState(position, velocity, np.linalg.norm(position))
+
+    def step_orbit(self, current_state, dt):
+        # Calc basic working values
+        r = np.linalg.norm(current_state.position)
+        g = self.mu / (r**2.0)
+        altitude = r - self.R
+        v = np.linalg.norm(current_state.velocity)
+
+        # Get vectors based on implicit information
+        inverse_normal_position = -current_state.position / np.linalg.norm(current_state.position)
+        inverse_normal_velocity = -current_state.velocity / np.linalg.norm(current_state.velocity)
+        gravity_vec = inverse_normal_position * g
+
+        # Calculate the drag
+        # Pressure from the surface not the center
+        pressure = self.get_pressure(altitude)
+        density = pressure / (R * self.get_atmospheric_temperature(altitude))
+        Fdrag = self.Cd * self.area * 0.5 * density * v**2.0
+        if altitude < self.H:
+            Fdragvec = inverse_normal_velocity * Fdrag
+        else:
+            Fdragvec = np.array([0, 0, 0])
+
+        # Calculate the next position
+        acceleration = gravity_vec + Fdragvec / self.mass
+        current_state.velocity += acceleration * dt
+        current_state.position += current_state.velocity * dt
+
+        current_state.r_prev = r
+        return current_state
 
     def get_pressure(self, altitude):
         return np.interp(altitude, ATMOSPHERE_TABLE[:, 0], ATMOSPHERE_TABLE[:, 1])
