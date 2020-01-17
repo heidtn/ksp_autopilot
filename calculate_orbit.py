@@ -2,6 +2,8 @@ import numpy as np
 from mayavi import mlab
 from mayavi.mlab import points3d, plot3d
 
+DISPLAY_TUBE_SIZE = 5000.0
+
 class SimulateOrbit:
     def __init__(self, mu, planet_radius):
         self.mu = mu
@@ -29,16 +31,21 @@ class SimulateOrbit:
         gravity_vector = -unit_position * gravitational_acceleration
         return gravity_vector
 
-    def plot_positions(self, position_array, animate=True):
+    def plot_positions(self, position_array, animate=False):
+        f = mlab.figure(bgcolor=(0, 0, 0))
         points3d([0], [0], [0], scale_factor=self.planet_radius*2.0, resolution=128, color=(0, 0.5, 0.5))
-        s = plot3d(position_array[:, 0], position_array[:, 1], position_array[:, 2], tube_radius=50000.0, colormap='Spectral')
+        points3d(position_array[0, 0], position_array[0, 1], position_array[0, 2],
+                 scale_factor=DISPLAY_TUBE_SIZE*10, resolution=128, color=(0.5, 0, 0))
+
+        s = plot3d(position_array[:, 0], position_array[:, 1], position_array[:, 2],
+                   tube_radius=DISPLAY_TUBE_SIZE, colormap='Spectral')
 
         @mlab.animate(delay=10)
         def anim():
             f = mlab.gcf()
             while True:
-                for i in range(1, len(position_array) / 10):
-                    s.mlab_source.reset(x=position_array[:i*10, 0], y=position_array[:i*10, 1], z=position_array[:i*10, 2])
+                for i in range(1, len(position_array) // 50):
+                    s.mlab_source.reset(x=position_array[:i*50, 0], y=position_array[:i*50, 1], z=position_array[:i*50, 2])
                     yield
         if animate:
             anim()
