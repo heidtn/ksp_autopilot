@@ -1,13 +1,24 @@
 import numpy as np
 from mayavi import mlab
 from mayavi.mlab import points3d, plot3d
+from collections import namedtuple
 
-DISPLAY_TUBE_SIZE = 5000.0
+OrbitConfig = namedtuple("OrbitConfig", ["mu",
+                                         "planet_radius",
+                                         "cross_section_area",
+                                         "drag_coefficient",
+                                         "density_function",
+                                         "ship_mass"])
+
 
 class SimulateOrbit:
-    def __init__(self, mu, planet_radius):
-        self.mu = mu
-        self.planet_radius = planet_radius
+    def __init__(self, config):
+        self.mu = config.mu
+        self.planet_radius = config.planet_radius
+        self.cross_section_area = config.cross_section_area
+        self.drag_coefficient = config.drag_coefficient
+        self.density_function = config.density_function
+        self.ship_mass = config.ship_mass
 
     def run_simulation(self, start_position, start_velocity, dt=1, iterations=100000):
         position = np.array(start_position)
@@ -16,13 +27,24 @@ class SimulateOrbit:
         velocities = []
 
         for i in range(iterations):
-            acceleration = self.get_gravity(position)
+            acceleration = self.get_gravity(position) + self.get_drag(position, velocity)
             velocity += acceleration * dt
             position += velocity * dt
             positions.append(np.array(position))
             velocities.append(np.array(velocity))
+            if np.linalg.norm(position) < self.planet_radius:
+                break
         
         return np.array(positions), np.array(velocities)
+
+    def get_drag(self, position, velocity):
+        v_mag = np.linalg.norm(velocity)
+        density = self.density_function(position)
+        drag_force = 0.5 * density * self.drag_coefficient * self.cross_section_area * v_mag**2.0
+        drag_decelleration_mag = drag_force / self.ship_mass
+        v_unit_vec = velocity / v_mag
+        drag_decelleration_vec = -v_unit_vec * drag_decelleration_mag
+        return drag_decelleration_vec
 
     def get_gravity(self, position):
         distance_from_center = np.linalg.norm(position)
@@ -34,11 +56,12 @@ class SimulateOrbit:
     def plot_positions(self, position_array, animate=False):
         f = mlab.figure(bgcolor=(0, 0, 0))
         points3d([0], [0], [0], scale_factor=self.planet_radius*2.0, resolution=128, color=(0, 0.5, 0.5))
+        tube_size = self.planet_radius / 100.0
         points3d(position_array[0, 0], position_array[0, 1], position_array[0, 2],
-                 scale_factor=DISPLAY_TUBE_SIZE*10, resolution=128, color=(0.5, 0, 0))
+                 scale_factor=tube_size*10, resolution=128, color=(0.5, 0, 0))
 
         s = plot3d(position_array[:, 0], position_array[:, 1], position_array[:, 2],
-                   tube_radius=DISPLAY_TUBE_SIZE, colormap='Spectral')
+                   tube_radius=tube_size, colormap='Spectral')
 
         @mlab.animate(delay=10)
         def anim():
