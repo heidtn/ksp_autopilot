@@ -16,52 +16,49 @@ class BurnSolver:
         positions, velocities = self.orbit_simulator.run_simulation(initial_pos, initial_vel, h=1, time=self.max_time)
         return positions[-1], velocities[-1]
 
-    def get_jacobian(self, cur_v, initial_pos, goal_pos):
+    def get_diff(self, initial_vel_dir, initial_pos, goal_pos, vel_mag):
         """
         Where cur_v is the current velocity to calculate around.  Uses finite differences.
         """
-        J = np.zeros((3, 3))  # derivative of final position with respect to start velocity?
         # perturb the starting velocity in each direction just a little!
-        eps = 1e-5
-        for i in range(3):
-            v = np.array(cur_v)  # make a copy
-            v[i] += eps
-            x_inc, _ = self.forward_euler_with_escape(v, initial_pos)
-            cost_inc = self.cost_func(x_inc, goal_pos, v)
+        eps = 1e-6
+        v = initial_vel_dir * (vel_mag + eps)  # make a copy
+        x_inc, _ = self.forward_euler_with_escape(v, initial_pos)
+        cost_inc = self.cost_func(x_inc, goal_pos)
 
-            v = np.array(cur_v)  # make another copy
-            v[i] -= eps
-            x_dec, _ = self.forward_euler_with_escape(v, initial_pos)
-            cost_dec = self.cost_func(x_dec, goal_pos, v)
-            J[:, i] = (cost_inc - cost_dec) / (2 * eps)
+        v = initial_vel_dir * (vel_mag - eps)
+        x_dec, _ = self.forward_euler_with_escape(v, initial_pos)
+        cost_dec = self.cost_func(x_dec, goal_pos)
+        
+        J = (cost_inc - cost_dec) / (2 * eps)
         
         return J
 
-    def cost_func(self, final_pos, goal_pos, initial_vel):
-        # TODO should this be a norm?
-        return (goal_pos - final_pos)**2.0 + 0.0001 * initial_vel**2.0
+    def cost_func(self, final_pos, goal_pos):
+        return np.linalg.norm(goal_pos - final_pos)
 
-    def shoot(self, initial_pos, initial_vel, goal_pos, iterations=50):
+    def shoot(self, initial_pos, initial_vel, goal_pos, alpha=0.1, iterations=50):
         error = []
         distance = []
-        next_vel = initial_vel
-        for i in tqdm(range(iterations)):
-            #positions, velocities = self.orbit_simulator.run_simulation(initial_pos, next_vel, h=1, time=self.max_time)
-            #self.orbit_simulator.plot_positions(positions)
+        initial_vel_dir = initial_vel / np.linalg.norm(initial_vel)
+        next_vel_mag = np.linalg.norm(initial_vel)
 
+        for i in tqdm(range(iterations)):
+            next_vel = initial_vel_dir * next_vel_mag
             final_pos, final_vel = self.forward_euler_with_escape(next_vel, initial_pos)
-            cost = self.cost_func(final_pos, goal_pos, next_vel)
+            cost = self.cost_func(final_pos, goal_pos)
             error.append(np.linalg.norm(cost))
             distance.append(np.linalg.norm(final_pos - goal_pos))
-            jac = self.get_jacobian(next_vel, initial_pos, goal_pos)
-            print("Jac: ", jac)
-            print("Cost: ", np.linalg.norm(cost))
-            next_vel = next_vel - 0.01 * np.dot(np.linalg.inv(jac), cost)
+
+            diff = self.get_diff(initial_vel_dir, initial_pos, goal_pos, next_vel_mag)
+            print("distance: ", distance[-1])
+            next_vel_mag = next_vel_mag - alpha * (cost / diff)
+
             plt.clf()
             plt.plot(distance)
             plt.pause(0.05)
             
-            print("Next vel test: ", next_vel)
+            print("Next vel test: ", next_vel_mag)
         #plt.plot(error)
         plt.show()
 
