@@ -2,6 +2,7 @@ import numpy as np
 from mayavi import mlab
 from mayavi.mlab import points3d, plot3d
 from collections import namedtuple
+import tqdm
 
 OrbitConfig = namedtuple("OrbitConfig", ["mu",
                                          "planet_radius",
@@ -20,16 +21,16 @@ class SimulateOrbit:
         self.density_function = config.density_function
         self.ship_mass = config.ship_mass
 
-    def run_simulation(self, start_position, start_velocity, dt=1, iterations=100000):
+    def run_simulation(self, start_position, start_velocity, h=1, time=100000):
         position = np.array(start_position)
         velocity = np.array(start_velocity)
         positions = []
         velocities = []
 
-        for i in range(iterations):
+        for i in tqdm.tqdm(range(int(round(time / h)))):
             acceleration = self.get_gravity(position) + self.get_drag(position, velocity)
-            velocity += acceleration * dt
-            position += velocity * dt
+            velocity += acceleration * h
+            position += velocity * h
             positions.append(np.array(position))
             velocities.append(np.array(velocity))
             if np.linalg.norm(position) < self.planet_radius:
