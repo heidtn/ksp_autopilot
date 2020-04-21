@@ -16,7 +16,7 @@ class BurnSolver:
         positions, velocities = self.orbit_simulator.run_simulation(initial_pos, initial_vel, h=1, time=self.max_time)
         return positions[-1], velocities[-1]
 
-    def get_jacobian(self, cur_v, initial_pos):
+    def get_jacobian(self, cur_v, initial_pos, goal_pos):
         """
         Where cur_v is the current velocity to calculate around.  Uses finite differences.
         """
@@ -27,34 +27,42 @@ class BurnSolver:
             v = np.array(cur_v)  # make a copy
             v[i] += eps
             x_inc, _ = self.forward_euler_with_escape(v, initial_pos)
+            cost_inc = self.cost_func(x_inc, goal_pos, v)
+
             v = np.array(cur_v)  # make another copy
             v[i] -= eps
             x_dec, _ = self.forward_euler_with_escape(v, initial_pos)
-            J[:, i] = (x_inc - x_dec) / (2 * eps)
+            cost_dec = self.cost_func(x_dec, goal_pos, v)
+            J[:, i] = (cost_inc - cost_dec) / (2 * eps)
         
         return J
 
-    def cost_func(self, final_pos, goal_pos):
+    def cost_func(self, final_pos, goal_pos, initial_vel):
         # TODO should this be a norm?
-        return np.abs(goal_pos - final_pos)
+        return (goal_pos - final_pos)**2.0 + 0.0001 * initial_vel**2.0
 
-    def shoot(self, initial_pos, initial_vel, goal_pos, iterations=300):
+    def shoot(self, initial_pos, initial_vel, goal_pos, iterations=50):
         error = []
+        distance = []
         next_vel = initial_vel
         for i in tqdm(range(iterations)):
             #positions, velocities = self.orbit_simulator.run_simulation(initial_pos, next_vel, h=1, time=self.max_time)
             #self.orbit_simulator.plot_positions(positions)
 
             final_pos, final_vel = self.forward_euler_with_escape(next_vel, initial_pos)
-            cost = self.cost_func(final_pos, goal_pos)
+            cost = self.cost_func(final_pos, goal_pos, next_vel)
             error.append(np.linalg.norm(cost))
-            jac = self.get_jacobian(next_vel, initial_pos)
+            distance.append(np.linalg.norm(final_pos - goal_pos))
+            jac = self.get_jacobian(next_vel, initial_pos, goal_pos)
             print("Jac: ", jac)
             print("Cost: ", np.linalg.norm(cost))
-            next_vel = next_vel - 0.003 * np.dot(np.linalg.inv(jac), cost)
+            next_vel = next_vel - 0.01 * np.dot(np.linalg.inv(jac), cost)
+            plt.clf()
+            plt.plot(distance)
+            plt.pause(0.05)
             
             print("Next vel test: ", next_vel)
-        plt.plot(error)
+        #plt.plot(error)
         plt.show()
 
         return next_vel, cost, error
