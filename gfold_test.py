@@ -2,6 +2,8 @@ import cvxpy as cvp
 import numpy as np
 from collections import namedtuple
 
+import matplotlib.pyplot as plt
+
 """
 http://www.larsblackmore.com/iee_tcst13.pdf
 
@@ -11,7 +13,7 @@ carrying the same assumption here that X is up (i.e. normal to land)
 
 
 GFoldConfig = namedtuple('GFoldConfig', ['isp', 'm', 'm_fuel',
-                                         'min_T_p', 'max_T_p', 'max_force',
+                                         'min_T_p', 'max_T_p',
                                          'g', 'pointing_lim', 'landing_cone',
                                          'q', 'v_max', 'w', 'start_pos',
                                          'start_vel'])
@@ -47,7 +49,7 @@ def get_cone(cone_angle):
     return _e1 / np.tan(cone_angle)
 
 
-def solve_gfold(config, iterations=50):
+def solve_gfold(config, iterations=450):
     N = iterations
 
     cost = []
@@ -55,51 +57,98 @@ def solve_gfold(config, iterations=50):
 
     # Constants
     x_0 = np.array([*config.start_pos, *config.start_vel])
+    print(x_0)
     A_w = create_A(config.w)
     n = np.array([1, 0, 0])
     B = create_B()
     g = config.g
     alpha = 1.0 / (config.isp * 9.8)
     pointing_angle = np.cos(config.pointing_lim)
+    q = config.q
+    v_max = config.v_max
+    p1 = config.min_T_p
+    p2 = config.max_T_p
+    c = get_cone(config.landing_cone)
+
+    dt = 4.5
 
     # Solved variables
     x = cvp.Variable((6, N))
-    u = cvp.Variable((3, N))
+    u = cvp.Variable((3, N)) 
     gam = cvp.Variable(N)
-    m = cvp.Variable(N)
-    tf = cvp.Variable(1, value=[5.0])
+    z = cvp.Variable(N)
 
     # initial settings
-    constr += [x[:, 0] == x_0]
+    #constr += [x[:, 0] == x_0]
+    constr += [x[0:3, 0] == x_0[0:3]]
+    constr += [x[3:6, 0] == x_0[3:6]]
+
     constr += [x[3:6, N-1] == np.array([0, 0, 0])]
-    constr += [m[0] == config.m]
-    constr += [m[N-1] >= config.m - config.m_fuel]
-    constr += [_e1@x[0:3,N-1] == 0]
+
+    #constr += [gam[N-1] == 0]
+    #constr += [z[0] == cvp.log(config.m)]
+    #constr += [u[:, 0] == gam[0]*_e1]
+    #constr += [u[:,N-1] == gam[N-1]*_e1]
+
+    #constr += [_e1@x[0:3,N-1] >= 0]
+
 
     for k in range(N-1):
-        constr += [x[:, k+1] == x[:, k] + tf*(A_w@x[:, k])]
-        constr += [m[k+1] == m[k] - alpha*gam]
-        constr += [cvp.norm(u) <= gam]
-        constr += [gam >= config.min_T_p * config.max_force]
-        constr += [gam <= config.max_T_p * config.max_force]
-        #constr += []
+        constr += [x[:, k+1] == x[:, k] + dt*(A_w@x[:, k])]
+        constr += [x[3:6, k+1] == x[3:6, k] + dt*(g + u[:, k])]
+        #constr += [z[k+1] == z[k] - dt*alpha*gam[k]]
 
+        #constr += [cvp.norm(x[3:6, k]) <= v_max]
+        #constr += [cvp.norm(u[:,k]) <= gam[k]]
+        #constr += [u[:,k] >= pointing_angle*gam[k]]
+        #constr += [cvp.norm(x[0:3,k] - q[:]) - c.T@(x[0:3, k] - q[:])  <= 0 ] # specific, but faster
+
+        if k > 0:
+            """
+            z_0 = cvp.log(config.m - alpha*p2*k*dt)
+            sigma_lower = p1 * cvp.exp(-z_0) * (1 - (z[k] - z_0) + (z[k] - z_0)**2.0/2)
+            sigma_upper = p2 * cvp.exp(-z_0) * (1 - (z[k] - z_0))
+            constr += [g[k] <= sigma_upper]
+            constr += [g[k] >= sigma_lower]
+            """
+            
+            z0_term = config.m - alpha * p2 * (k) * dt  # see ref [2], eq 34,35,36
+            z1_term = config.m - alpha * p1 * (k) * dt
+            z0 = cvp.log( z0_term )
+            z1 = cvp.log( z1_term )
+            mu_1 = p1/(z1_term)
+            mu_2 = p2/(z0_term)
+
+            # lower thrust bound
+            #constr += [gam[k] <= mu_2 * (1 - (z[k] - z0))] # upper thrust bound
+            #constr += [z[k] >= z0] # Ensures physical bounds on z are never violated
+            #constr += [z[k] <= z1]
+
+    obj = cvp.norm(x[0:3, N-1] - q[:])
+    problem = cvp.Problem(cvp.Minimize(obj), constr)
+    problem.solve(solver=cvp.ECOS, verbose=True, feastol=5e-15)
+
+    return x
 
 
 if __name__ == "__main__":
-    config = GFoldConfig(isp=350,
-                         m=12000,
-                         m_fuel=5000,
-                         min_T_p=0.2,
-                         max_T_p=0.8,
-                         max_force=250000,
+    config = GFoldConfig(isp=203.94,
+                         m=(2*1e3 + (0.3)*1e3),
+                         m_fuel=(0.3)*1e3,
+                         min_T_p=0.2*24000,
+                         max_T_p=0.8*24000,
                          g=np.array([-3, 0, 0]),
                          pointing_lim=np.deg2rad(45),
-                         landing_cone=np.deg2rad(45),
+                         landing_cone=np.deg2rad(30),
                          q=np.array([0, 0, 0]),
-                         v_max=1500,
-                         w=np.array([0, 1e-5, 0]),
-                         start_pos=np.array([1e5, 3000, 0]),
-                         start_vel=np.array([100, 400, 200])
+                         v_max=90,
+                         w=np.array([0, 0, 0]),
+                         start_pos=np.array([2400, 2000, 0]),
+                         start_vel=np.array([-40, 30, 0])
                          )
-    solve_gfold(config)
+    x = solve_gfold(config)
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    plt.plot(x[0, :].value, x[1, :].value, x[2, :].value)
