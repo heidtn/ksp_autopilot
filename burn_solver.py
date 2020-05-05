@@ -55,6 +55,9 @@ class BurnSolver:
             next_vel_mag = next_vel_mag - alpha * (cost / diff)
 
             plt.clf()
+            plt.title("Error per iteration")
+            plt.xlabel("iteration")
+            plt.ylabel("error (m)")
             plt.plot(distance)
             plt.pause(0.05)
             
