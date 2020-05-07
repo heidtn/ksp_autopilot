@@ -103,13 +103,13 @@ def solve_gfold(config, iterations=100):
         constr += [cvp.norm(x[3:6, k]) <= v_max]
         constr += [cvp.norm(u[:,k]) <= gam[k]]
         constr += [u[0,k] >= pointing_angle*gam[k]]
-        constr += [cvp.norm(x[0:3,k] - q[:]) - c.T@(x[0:3, k] - q[:])  <= 0 ] # specific, but faster
+        constr += [cvp.norm(x[0:3,k] - q[:]) - c.T@(x[0:3, k] - q[:])  <= 0 ]
 
         if k > 0:
             z_0 = cvp.log(config.m - alpha * p2 * (k) * dt)
             z_1 = cvp.log(config.m - alpha * p1 * (k) * dt)
 
-            sigma_lower = p1 * cvp.exp(-z_0) * (1 - (z[k] - z_0) + (z[k] - z_0)**2.0/2)
+            sigma_lower = p1 * cvp.exp(-z_0) * (1 - (z[k] - z_0) + (z[k] - z_0))
             sigma_upper = p2 * cvp.exp(-z_0) * (1 - (z[k] - z_0))
 
             constr += [gam[k] <= sigma_upper]
@@ -142,6 +142,7 @@ if __name__ == "__main__":
                          )
 
     x, u, gam, z = solve_gfold(config)
+    print(f"final values:\nx: {x[:,-1]}\nu: {u[:,-1]}", )
 
     plt.plot(np.exp(z))
     plt.show()
