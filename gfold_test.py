@@ -78,10 +78,11 @@ class GFOLDSolverPosition:
         self.problem = cvp.Problem(cvp.Minimize(self.obj), self.constr)
 
     def initialize_dt(self, start_vel):
-        alpha = 1.0 / (config.isp * 9.8)
+        alpha = 1.0 / (self.config.isp * 9.8)
         t_max = self.config.m / (alpha * self.config.p2)  # this differs from the paper, but using p1 results in cvp.log to return nan
         t_min = (self.config.m - self.config.m_fuel) * np.linalg.norm(start_vel) / self.config.p2
-        self.dt.value = (t_max + t_min) / 2.0 / self.N
+        print("Full time: ", (0.5*t_max + 0.5*t_min))
+        self.dt.value = (0.5*t_max + 0.5*t_min) / self.N
 
     def solve(self, start_pos, start_vel):
         self.initialize_dt(start_vel)
@@ -103,9 +104,14 @@ class GFOLDSolverMass(GFOLDSolverPosition):
         self.d_p3.value = d_p3
         self.x_0.value = np.array([*start_pos, *start_vel])
 
-        self.problem.solve(solver=cvp.ECOS, verbose=True, max_iters=200)
-        first_mass = self.z[-1]
-        self.dt.value += 1e-3
+        self.problem.solve(solver=cvp.ECOS, verbose=False, max_iters=400)
+        first_mass = self.z[-1].value
+        print("Start dt: ", self.dt.value)
+        self.dt.value = (self.N * self.dt.value + 1e-1)  / self.N
+        print("end dt: ", self.dt.value)
+        self.problem.solve(solver=cvp.ECOS, verbose=False, max_iters=400)
+        second_mass = self.z[-1].value
+        print("Mass change: ", first_mass - second_mass)
         return self.x.value, self.u.value, self.gam.value, self.z.value
 
 
@@ -118,15 +124,13 @@ class GFOLDSolver:
     def solve(self, start_pos, start_vel):
         print("Solving position problem")
         x1, u1, gam1, z1 = self.position_solver.solve(start_pos, start_vel)
-        print("Solving mass problem")
-        x2, u2, gam2, z2 = self.mass_solver.solve(x1[0:3,-1], start_pos, start_vel)
-        return x2, u2, gam2, z2
-
+        # TODO: solve the mass problem efficiently!
+        #print("Solving mass problem")
+        #x2, u2, gam2, z2 = self.mass_solver.solve(x1[0:3,-1], start_pos, start_vel)
+        return x1, u1, gam1, z1, self.position_solver.dt.value
 
 
 def set_initial_constraints(constr, config, x, u, gam, z, N, x_0):
-    #x_0 = np.array([*config.start_pos, *config.start_vel])
-
     constr += [x[:, 0] == x_0[:]]   # Initial velocity and position
     constr += [x[3:6, N-1] == np.array([0, 0, 0])]  # Final velocity == 0
 
@@ -178,8 +182,8 @@ def running_constraints(constr, config, x, u, gam, z, dt, N):
 
 def solve_gfold(config, start_pos, start_vel, iterations=100):
     solver = GFOLDSolver(config, iterations)
-    x, u, gam, z = solver.solve(start_pos, start_vel)
-    return x, u, gam, z
+    x, u, gam, z, dt = solver.solve(start_pos, start_vel)
+    return x, u, gam, z, dt
 
 
 if __name__ == "__main__":
