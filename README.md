@@ -4,7 +4,7 @@ This project is aimed at creating a few general purpose tools for piloting space
 * Orbital plotting - plots the spacecrafts current orbit including drag models (assuming coefficients provided) for arbitrary bodies
 * Vision based surface analysis - Uses images of the surface to determine good landing locations
 * Nonlinear burn solver - (WORK IN PROGRESS) a solver that solves an initial burn for a spacecraft to place it in a desired location
-* GFOLD solver - A convex solver for optimal landing trajectory calculation
+* GFOLD solver (FUEL OPTIMAL LARGE DIVERT) - A convex solver for optimal landing trajectory calculation
 * Trajectory tracking - A simple linear trajectory tracking control system
 
 
@@ -14,6 +14,8 @@ Example of the orbital plotting
 Vision based surface reconstruction
 ![surface reconstruction](terrain_snapshot.png)
 
+GFOLD solver trajectory
+![GFOLD trajectory](gfold_calculation.py)
 
 NOTE: This project is still a work in progress and is intended as a learning tool rather than a supported library for KSP.
 

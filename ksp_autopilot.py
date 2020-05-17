@@ -164,8 +164,8 @@ class AutoPilot:
             err = goal_position - np.array([*pos, *vel])
 
             thrust_vector = np.array([2., 0, 0])
-            thrust_vector[1:3] = err[1:3]*0.025
-            thrust_vector[1:3] += err[4:6]*0.56
+            thrust_vector[1:3] = err[1:3]*0.015
+            thrust_vector[1:3] += err[4:6]*0.36
             self.autopilot.target_direction = tuple(thrust_vector)
 
             print("Thrust: ", thrust_vector)
@@ -175,7 +175,7 @@ class AutoPilot:
             thrust_vector[0] = err[0]*2.0
             thrust_vector[0] += err[3]*4.3
             thrust_vector[0] = np.max((thrust_vector[0], 0))
-            throttle = np.linalg.norm(thrust_vector)*0.08   #0.25
+            throttle = np.linalg.norm(thrust_vector)*0.01   #0.25
             print("Thrustvec2: ", throttle)
             self.vessel.control.throttle  = throttle
 
@@ -196,5 +196,7 @@ if __name__ == "__main__":
     print("Rotating frame position: ", pos)
 
     #goal_pos = np.array((159198.49890755463, -1176.8349779020318, -578566.3171298194))
-    goal_pos = np.array((-160822.82145683363, -130782.2978001064, -249393.70446923468))
+    # Position of the heli pad on top of the VAB
+    goal_pos = np.array((159188.42536982114, -1012.4470751636361, -578679.892709093))
+    #goal_pos = np.array((-160822.82145683363, -130782.2978001064, -249393.70446923468))
     autopilot.do_landing_burn(goal_pos)
