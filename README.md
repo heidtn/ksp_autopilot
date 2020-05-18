@@ -15,7 +15,7 @@ Vision based surface reconstruction
 ![surface reconstruction](terrain_snapshot.png)
 
 GFOLD solver trajectory
-![GFOLD trajectory](gfold_calculation.py)
+![GFOLD trajectory](gfold_calculation.png)
 
 NOTE: This project is still a work in progress and is intended as a learning tool rather than a supported library for KSP!  I am happy to answer questions on it and take feature requests though!
 
