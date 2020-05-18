@@ -17,8 +17,25 @@ Vision based surface reconstruction
 GFOLD solver trajectory
 ![GFOLD trajectory](gfold_calculation.py)
 
-NOTE: This project is still a work in progress and is intended as a learning tool rather than a supported library for KSP.
+NOTE: This project is still a work in progress and is intended as a learning tool rather than a supported library for KSP!  I am happy to answer questions on it and take feature requests though!
 
 ### How to use
-The ksp_autopilot module contains the AutoPilot class that has associated functions for different operations.  See source for details.
+The ksp_autopilot module contains the AutoPilot class that has associated functions for different operations.  See source for details.  The general usage looks like
+
+```python
+from ksp_autopilot import AutoPilot
+
+autopilot = AutoPilot()
+autopilot.plot_orbit()
+# Position of the helipad in the rotating reference frame
+goal_pos = np.array((159188.42536982114, -1012.4470751636361, -578679.892709093))
+autopilot.do_landing_burn(goal_position)
+```
+
+### Planned features
+* Move the per-ship settings (proportial gains, drag coefficients, etc.) to config files
+* Currently the GFOLD only does the position optimal solve.  Need to add fuel optimal and line search for final time parameter.
+* It is most likely possible to dynamically solve for a controller based on the ship's dynamics (i.e. LQR) so this doesn't need to be recomputed.
+
+
 

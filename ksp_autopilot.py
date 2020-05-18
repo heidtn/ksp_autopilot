@@ -110,9 +110,7 @@ class AutoPilot:
         print("Config: ", config)
         return config
 
-    def do_landing_burn(self, goal_position):
-        #self.wait_for_altitude(10000)
-        #self.point_retrograde()
+    def do_landing_burn(self, goal_position, do_plot=True):
         flight = self.vessel.flight()
         orbit = self.vessel.orbit
         # create a transform for the goal position as an x-up frame
@@ -124,26 +122,24 @@ class AutoPilot:
         z_ax /= np.linalg.norm(z_ax)
         rot = np.column_stack([x_ax, y_ax, z_ax])
         q = R.from_matrix(rot).as_quat()
-
-
         ref_frame = self.conn.space_center.ReferenceFrame.create_relative(self.body.reference_frame,
                                                           position=goal_position,
                                                           rotation=q)
 
-
+        # Solve the gfold problem based on current position and velocity
         pos, vel = self.get_position_and_velocity(ref_frame)
-        print("POS VEL: ", pos, vel)
         start_time = self.conn.space_center.ut
         config = self.create_gfold_config()
         x, u, gam, z, dt = gfold_test.solve_gfold(config, pos, vel)
 
-
-        f = mlab.figure(bgcolor=(0, 0, 0))
-        points3d([0], [0], [0], scale_factor=200.0, resolution=128, color=(0, 0.5, 0.5))
-        s = plot3d(x[0,:], x[1,:], x[2,:], tube_radius=5.0, colormap='Spectral')
-        v = quiver3d(x[0,:], x[1,:], x[2,:], u[0,:], u[1,:], u[2,:])
-        mlab.axes()
-        mlab.show()
+        # plot the results
+        if do_plot:
+            f = mlab.figure(bgcolor=(0, 0, 0))
+            points3d([0], [0], [0], scale_factor=200.0, resolution=128, color=(0, 0.5, 0.5))
+            s = plot3d(x[0,:], x[1,:], x[2,:], tube_radius=5.0, colormap='Spectral')
+            v = quiver3d(x[0,:], x[1,:], x[2,:], u[0,:], u[1,:], u[2,:])
+            mlab.axes()
+            mlab.show()
 
         timesteps = np.linspace(0, x.shape[1]*dt, num=x.shape[1])
         f = interp1d(timesteps, x[:], kind='cubic')
@@ -152,6 +148,10 @@ class AutoPilot:
 
         self.autopilot.reference_frame = ref_frame
         self.autopilot.engage()
+
+        context = clive_log.Context("vpstream")
+        context.add_text_field("error")
+        context.add_text_field("distance")
 
         while self.vessel.situation != self.conn.space_center.VesselSituation.landed:
             cur_time = self.conn.space_center.ut - start_time
@@ -167,21 +167,20 @@ class AutoPilot:
             thrust_vector[1:3] = err[1:3]*0.015
             thrust_vector[1:3] += err[4:6]*0.36
             self.autopilot.target_direction = tuple(thrust_vector)
-
-            print("Thrust: ", thrust_vector)
-            print("Err: ", err)
             thrust_vector[0] = 0.0
             thrust_vector *= 0.05
             thrust_vector[0] = err[0]*2.0
             thrust_vector[0] += err[3]*4.3
             thrust_vector[0] = np.max((thrust_vector[0], 0))
             throttle = np.linalg.norm(thrust_vector)*0.01   #0.25
-            print("Thrustvec2: ", throttle)
             self.vessel.control.throttle  = throttle
+            distance = np.linalg.norm(pos)
 
+            context.write_text_field("error", f"Error: {err}")
+            context.write_text_field("distance", f"Distance: {distance}")
+            context.display()
 
         self.vessel.control.throttle = 0
-
 
     def solve_deltav_change(self, goal_pos, initial_guess, time=60*240):
         solver = burn_solver.BurnSolver(time, self.get_orbit_config())
@@ -195,8 +194,6 @@ if __name__ == "__main__":
     pos, vel = autopilot.get_position_and_velocity(autopilot.body.reference_frame)
     print("Rotating frame position: ", pos)
 
-    #goal_pos = np.array((159198.49890755463, -1176.8349779020318, -578566.3171298194))
     # Position of the heli pad on top of the VAB
     goal_pos = np.array((159188.42536982114, -1012.4470751636361, -578679.892709093))
-    #goal_pos = np.array((-160822.82145683363, -130782.2978001064, -249393.70446923468))
     autopilot.do_landing_burn(goal_pos)
