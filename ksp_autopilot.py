@@ -152,6 +152,9 @@ class AutoPilot:
         context = clive_log.Context("vpstream")
         context.add_text_field("error")
         context.add_text_field("distance")
+        actual = []
+        desired = []
+        errors = []
 
         while self.vessel.situation != self.conn.space_center.VesselSituation.landed:
             cur_time = self.conn.space_center.ut - start_time
@@ -163,16 +166,17 @@ class AutoPilot:
             pos, vel = self.get_position_and_velocity(ref_frame)
             err = goal_position - np.array([*pos, *vel])
 
-            thrust_vector = np.array([2., 0, 0])
-            thrust_vector[1:3] = err[1:3]*0.015
-            thrust_vector[1:3] += err[4:6]*0.36
+            # TODO move these gain values to config files!!!
+            thrust_vector = np.array([1., 0, 0])
+            thrust_vector[1:3] = err[1:3]*0.025
+            thrust_vector[1:3] += err[4:6]*0.045
             self.autopilot.target_direction = tuple(thrust_vector)
             thrust_vector[0] = 0.0
-            thrust_vector *= 0.05
-            thrust_vector[0] = err[0]*2.0
-            thrust_vector[0] += err[3]*4.3
-            thrust_vector[0] = np.max((thrust_vector[0], 0))
-            throttle = np.linalg.norm(thrust_vector)*0.01   #0.25
+            thrust_vector *= 0.25
+            thrust_vector[0] = err[0]*0.3
+            thrust_vector[0] += err[3]*1.3
+            thrust_vector[0] = np.max((thrust_vector[0], 0.0))
+            throttle = np.linalg.norm(thrust_vector)*0.3
             self.vessel.control.throttle  = throttle
             distance = np.linalg.norm(pos)
 
@@ -180,7 +184,35 @@ class AutoPilot:
             context.write_text_field("distance", f"Distance: {distance}")
             context.display()
 
+            actual.append(pos)
+            desired.append(goal_position)
+            errors.append(err)
+
         self.vessel.control.throttle = 0
+
+        actual = np.array(actual)
+        desired = np.array(desired)
+        errors = np.array(errors)
+        #import ipdb; ipdb.set_trace()
+        plt.figure()
+        plt.title("X position")
+        plt.plot(actual[:,0], label='actual')
+        plt.plot(desired[:,0], label='desired')
+        plt.legend()
+
+        plt.figure()
+        plt.title("Y position")
+        plt.plot(actual[:,1], label='actual')
+        plt.plot(desired[:,1], label='desired')
+        plt.legend()
+
+        plt.figure()
+        plt.title("Z position")
+        plt.plot(actual[:,2], label='actual')
+        plt.plot(desired[:,2], label='desired')
+        plt.legend()
+
+        plt.show()
 
     def solve_deltav_change(self, goal_pos, initial_guess, time=60*240):
         solver = burn_solver.BurnSolver(time, self.get_orbit_config())
@@ -195,5 +227,6 @@ if __name__ == "__main__":
     print("Rotating frame position: ", pos)
 
     # Position of the heli pad on top of the VAB
-    goal_pos = np.array((159188.42536982114, -1012.4470751636361, -578679.892709093))
+    #goal_pos = np.array((159188.42536982114, -1012.4470751636361, -578679.892709093))
+    goal_pos = np.array((-107088.64477776378, 47226.42071976487, -300555.5919400023))
     autopilot.do_landing_burn(goal_pos)
