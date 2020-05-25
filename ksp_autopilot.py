@@ -7,6 +7,7 @@ import burn_solver
 from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import interp1d
 import gfold_test
+import rocket_control
 
 from mayavi import mlab
 from mayavi.mlab import points3d, plot3d, quiver3d
@@ -156,6 +157,16 @@ class AutoPilot:
         desired = []
         errors = []
 
+        Qmat = np.diag([140, 2, 2, 30, 1, 1])
+        Rmat = np.diag([10, 120, 120])
+        drag_coeffs = 0.5*COEFFICIENT_OF_DRAG*CROSS_SECTION_AREA*self.body.density_at(0)
+        control_config = rocket_control.ControlConfig(drag_coeffs=drag_coeffs, drag_linearization_v=200,
+                                                      mass=self.vessel.mass,
+                                                      Q=Qmat, R=Rmat)
+        moment_of_inertia = np.array((59876.7109375, 16748.431640625, 59876.71484375))
+        print("Building K")
+        K = rocket_control.create_K(control_config)
+        
         while self.vessel.situation != self.conn.space_center.VesselSituation.landed:
             cur_time = self.conn.space_center.ut - start_time
             index_time = cur_time
@@ -167,20 +178,18 @@ class AutoPilot:
             err = goal_position - np.array([*pos, *vel])
 
             # TODO move these gain values to config files!!!
-            thrust_vector = np.array([1., 0, 0])
-            thrust_vector[1:3] = err[1:3]*0.025
-            thrust_vector[1:3] += err[4:6]*0.045
-            self.autopilot.target_direction = tuple(thrust_vector)
-            thrust_vector[0] = 0.0
-            thrust_vector *= 0.25
-            thrust_vector[0] = err[0]*0.3
-            thrust_vector[0] += err[3]*1.3
-            thrust_vector[0] = np.max((thrust_vector[0], 0.0))
-            throttle = np.linalg.norm(thrust_vector)*0.3
-            self.vessel.control.throttle  = throttle
-            distance = np.linalg.norm(pos)
+            u = np.dot(K, err) + np.array([-self.body.surface_gravity, 0, 0])
+            if u[0] < 0:
+                u[0] = 0
 
-            context.write_text_field("error", f"Error: {err}")
+            control_vector = u / np.linalg.norm(u)
+            self.autopilot.target_direction = tuple(control_vector)
+
+            new_throttle = np.linalg.norm(u * self.vessel.mass) / self.vessel.max_thrust
+            self.vessel.control.throttle = new_throttle
+
+            distance = np.linalg.norm(pos)
+            context.write_text_field("error", f"Error: {self.vessel.moment_of_inertia}")
             context.write_text_field("distance", f"Distance: {distance}")
             context.display()
 
@@ -227,6 +236,5 @@ if __name__ == "__main__":
     print("Rotating frame position: ", pos)
 
     # Position of the heli pad on top of the VAB
-    #goal_pos = np.array((159188.42536982114, -1012.4470751636361, -578679.892709093))
-    goal_pos = np.array((-107088.64477776378, 47226.42071976487, -300555.5919400023))
+    goal_pos = np.array((159188.42536982114, -1012.4470751636361, -578679.892709093))
     autopilot.do_landing_burn(goal_pos)
