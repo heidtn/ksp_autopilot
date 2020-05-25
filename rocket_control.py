@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 m = GEKKO()
 
 ControlConfig = namedtuple('ControlConfig', ['drag_coeffs', 'drag_linearization_v', 'mass', 'Q', 'R'])
-MPCConfig = namedtuple('MPCConfig', ['MOIs', 'max_thrust', 'fuel_depletion_rate', 'g'])
+MPCConfig = namedtuple('MPCConfig', ['MOIs', 'max_thrust', 'g'])
 
 def create_K(config):
     g = config.g
@@ -45,25 +45,25 @@ class RocketMPC:
         self.mass = m.Param()
 
         # Manipulated variable
-        self.T = m.MV(value=0, lb=0, ub=self.config.max_thrust)
+        self.T = m.MV(lb=0, ub=self.config.max_thrust)
         T = self.T
         T.STATUS = 1  # allow optimizer to change
         T.DCOST = 0.1 # smooth out gas pedal movement
-        T.DMAX = 20   # slow down change of gas pedal
+        #T.DMAX = 20   # slow down change of gas pedal
 
         # Manipulated variable
-        self.Ta = m.MV(value=0, lb=-1.0, ub=1.0)
+        self.Ta = m.MV(lb=-1.0, ub=1.0)
         Ta = self.Ta
         Ta.STATUS = 1  # allow optimizer to change
-        Ta.DCOST = 0.1 # smooth out gas pedal movement
-        Ta.DMAX = 20   # slow down change of gas pedal
+        #Ta.DCOST = 0.1 # smooth out gas pedal movement
+        #Ta.DMAX = 1000   # slow down change of gas pedal
 
         # Manipulated variable
-        self.Tb = m.MV(value=0, lb=-1.0, ub=1.0)
+        self.Tb = m.MV(lb=-1.0, ub=1.0)
         Tb = self.Tb
         Tb.STATUS = 1  # allow optimizer to change
-        Tb.DCOST = 0.1 # smooth out gas pedal movement
-        Tb.DMAX = 20   # slow down change of gas pedal
+        #Tb.DCOST = 0.1 # smooth out gas pedal movement
+        #Tb.DMAX = 20   # slow down change of gas pedal
 
         # Controlled Variable
         self.X = m.Array(m.CV, (3))
@@ -72,7 +72,7 @@ class RocketMPC:
             x.STATUS = 1  # add the SP to the objective
             m.options.CV_TYPE = 2 # squared error
             x.TR_INIT = 1 # set point trajectory
-            x.TAU = 5     # time constant of trajectory
+            x.TAU = 50     # time constant of trajectory
         self.X[0].LOWER = 0.0
 
         self.X_dot = m.Array(m.CV, (3))
@@ -81,14 +81,23 @@ class RocketMPC:
             x.STATUS = 1  # add the SP to the objective
             m.options.CV_TYPE = 2 # squared error
             x.TR_INIT = 1 # set point trajectory
-            x.TAU = 5     # time constant of trajectory
+            x.TAU = 50     # time constant of trajectory
 
-        self.a = m.CV(0, lb=-np.pi/2, ub=np.pi/2)
+        self.a = m.CV(lb=-np.pi/2, ub=np.pi/2)
         a = self.a
-        a_dot = m.CV(0)
-        self.b = m.CV(0, lb=-np.pi/2, ub=np.pi/2)
+        a.TR_INIT = 1
+
+        self.a_dot = m.CV(0)
+        a_dot = self.a_dot
+        #a_dot.TR_INIT = 1
+
+        self.b = m.CV(lb=-np.pi/2, ub=np.pi/2)
         b = self.b
-        b_dot = m.CV(0)
+        b.TR_INIT = 1
+
+        self.b_dot = m.CV(0)
+        b_dot = self.b_dot
+        #b_dot.TR_INIT = 1
 
         m.Equation(X[0].dt() == X_dot[0])
         m.Equation(X[1].dt() == X_dot[1])
@@ -106,7 +115,7 @@ class RocketMPC:
 
         m.options.IMODE = 6 # control
         
-    def solve_next_state(self, current_state, goal_state):
+    def solve_next_state(self, current_state, goal_state, angle_state):
         self.X[0].SP = goal_state[0]
         self.X[1].SP = goal_state[1]
         self.X[2].SP = goal_state[2]
@@ -123,12 +132,17 @@ class RocketMPC:
         self.X_dot[1].value = current_state[4]
         self.X_dot[2].value = current_state[5]
 
+        self.a.value = angle_state[0]
+        #self.a_dot.value = angle_state[1]
+        self.b.value = angle_state[2]
+        #self.b_dot.value = angle_state[3]
+
         self.m.solve(disp=False)
         return self.X, self.X_dot, self.T, self.Ta, self.Tb, self.a, self.b
 
-    def get_next_control(self, current_state, goal_state):
-        x, xd, T, Ta, Tb, a, b = self.solve_next_state(current_state, goal_state)
-        return T.value[0], Ta.value[0], Tb.value[0]
+    def get_next_control(self, current_state, goal_state, angle_state):
+        x, xd, T, Ta, Tb, a, b = self.solve_next_state(current_state, goal_state, angle_state)
+        return T.value[1], a.value[1], b.value[1]
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import burn_solver
 from scipy.spatial.transform import Rotation as R
 from scipy.interpolate import interp1d
 import gfold_test
+import rocket_control
 
 from mayavi import mlab
 from mayavi.mlab import points3d, plot3d, quiver3d
@@ -149,12 +150,28 @@ class AutoPilot:
         self.autopilot.reference_frame = ref_frame
         self.autopilot.engage()
 
+        ####### Create controller #########
+        # a is pitch, b is yaw!
+        print("Available toruqe: ", self.vessel.available_torque)
+        print("MOI: ", self.vessel.moment_of_inertia)
+        MOIs = [self.vessel.available_torque[0][0] / self.vessel.moment_of_inertia[0],
+                self.vessel.available_torque[0][2] / self.vessel.moment_of_inertia[2]]
+        max_thrust = (self.vessel.max_thrust / self.vessel.mass) * 0.2
+        mpc_config = rocket_control.MPCConfig(MOIs, max_thrust, self.body.surface_gravity)
+        controller = rocket_control.RocketMPC(mpc_config)
+        controller.build()
+
+
         context = clive_log.Context("vpstream")
         context.add_text_field("error")
         context.add_text_field("distance")
         actual = []
         desired = []
         errors = []
+
+        a, b, a_dot, b_dot = 0, 0, 0, 0
+        last_a = 0
+        last_b = 0
 
         while self.vessel.situation != self.conn.space_center.VesselSituation.landed:
             cur_time = self.conn.space_center.ut - start_time
@@ -166,21 +183,29 @@ class AutoPilot:
             pos, vel = self.get_position_and_velocity(ref_frame)
             err = goal_position - np.array([*pos, *vel])
 
-            # TODO move these gain values to config files!!!
-            thrust_vector = np.array([1., 0, 0])
-            thrust_vector[1:3] = err[1:3]*0.025
-            thrust_vector[1:3] += err[4:6]*0.045
-            self.autopilot.target_direction = tuple(thrust_vector)
-            thrust_vector[0] = 0.0
-            thrust_vector *= 0.25
-            thrust_vector[0] = err[0]*0.3
-            thrust_vector[0] += err[3]*1.3
-            thrust_vector[0] = np.max((thrust_vector[0], 0.0))
-            throttle = np.linalg.norm(thrust_vector)*0.3
-            self.vessel.control.throttle  = throttle
-            distance = np.linalg.norm(pos)
 
-            context.write_text_field("error", f"Error: {err}")
+            # Get yaw and pitch info
+            rotation = self.vessel.flight(ref_frame).rotation
+            yaw, pitch, roll = R(rotation).as_euler('zyx')
+            b = yaw + np.pi/2.0
+            a = pitch
+
+            a_dot = (a - last_a) * 100.0
+            b_dot = (b - last_b) * 100.0
+            last_a = a
+            last_b = b 
+            angle_state = [a, a_dot, b, b_dot]
+
+            controller.build()
+            T, ac, bc = controller.get_next_control(np.array([*pos, *vel]), goal_position, angle_state)
+
+            self.autopilot.target_pitch = ac
+            self.autopilot.target_yaw = bc
+            self.autopilot.target_roll = 0.0
+            self.vessel.control.throttle  = T / (self.vessel.max_thrust / self.vessel.mass)
+
+            distance = np.linalg.norm(pos)
+            context.write_text_field("error", f"Error: {a, b}")
             context.write_text_field("distance", f"Distance: {distance}")
             context.display()
 
@@ -227,6 +252,6 @@ if __name__ == "__main__":
     print("Rotating frame position: ", pos)
 
     # Position of the heli pad on top of the VAB
-    #goal_pos = np.array((159188.42536982114, -1012.4470751636361, -578679.892709093))
-    goal_pos = np.array((-107088.64477776378, 47226.42071976487, -300555.5919400023))
+    goal_pos = np.array((159188.42536982114, -1012.4470751636361, -578679.892709093))
+    #goal_pos = np.array((-107088.64477776378, 47226.42071976487, -300555.5919400023))
     autopilot.do_landing_burn(goal_pos)
